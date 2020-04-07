@@ -1,8 +1,9 @@
 use crate::Capabilities;
 use crate::NLRIEncoding;
 use crate::{Prefix, AFI};
+use crate::Error;
 use byteorder::{BigEndian, ReadBytesExt};
-use std::io::{Cursor, Error, ErrorKind, Read};
+use std::io::{Cursor, Read};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -328,7 +329,7 @@ impl PathAttribute {
                 while cursor.position() < (length - 4).into() {
                     let result = PathAttribute::parse(&mut cursor, capabilities);
                     match result {
-                        Err(x) => println!("Error: {}", x),
+                        Err(x) => println!("Error: {:?}", x),
                         Ok(x) => attributes.push(x),
                     }
                 }
@@ -338,11 +339,7 @@ impl PathAttribute {
             x => {
                 let mut buffer = vec![0; usize::from(length)];
                 stream.read_exact(&mut buffer)?;
-
-                Err(Error::new(
-                    ErrorKind::Other,
-                    format!("Unknown path attribute type found: {}", x),
-                ))
+                Err(Error::UnknownPathAttribute(x, buffer))
             }
         }
     }
@@ -407,7 +404,7 @@ impl Origin {
             0 => Ok(Origin::IGP),
             1 => Ok(Origin::EGP),
             2 => Ok(Origin::INCOMPLETE),
-            _ => Err(Error::new(ErrorKind::Other, "Unknown origin type found.")),
+            x => Err(Error::UnknownOrigin(x)),
         }
     }
 }
@@ -491,12 +488,7 @@ impl Segment {
             match segment_type {
                 1 => segments.push(Segment::AS_SET(elements)),
                 2 => segments.push(Segment::AS_SEQUENCE(elements)),
-                x => {
-                    return Err(Error::new(
-                        ErrorKind::Other,
-                        format!("Unknown AS_PATH segment type found: {}", x),
-                    ));
-                }
+                x => return Err(Error::UnknownAsPathSegment(x)),
             }
 
             size -= 2 + (u16::from(segment_length) * 2);
@@ -529,12 +521,7 @@ impl Segment {
             match segment_type {
                 1 => segments.push(Segment::AS_SET(elements)),
                 2 => segments.push(Segment::AS_SEQUENCE(elements)),
-                x => {
-                    return Err(Error::new(
-                        ErrorKind::Other,
-                        format!("Unknown AS_PATH segment type found: {}", x),
-                    ));
-                }
+                x => return Err(Error::UnknownAsPathSegment(x)),
             }
 
             size -= 2 + (u16::from(segment_length) * 4) as i32;

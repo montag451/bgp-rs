@@ -57,13 +57,36 @@
 pub mod attributes;
 
 use byteorder::{BigEndian, ReadBytesExt};
-use std::io::{Cursor, Error, ErrorKind, Read};
+use std::io::{self, Cursor, Read};
 
 pub use crate::attributes::*;
 use std::fmt::Debug;
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::net::IpAddr;
+
+/// Error type used when a function of this crate failed
+#[derive(Debug)]
+pub enum Error {
+    /// Wrapped std::io::Error
+    IOError(io::Error),
+    /// Unknown AFI
+    UnknownAddressFamily(u16),
+    /// Unknown message
+    UnknownMessage(Header, Vec<u8>),
+    /// Unknown path attribute
+    UnknownPathAttribute(u8, Vec<u8>),
+    /// Unknown origin
+    UnknownOrigin(u8),
+    /// Unknown AS_PATH segment
+    UnknownAsPathSegment(u8),
+}
+
+impl From<io::Error> for Error {
+    fn from(err: io::Error) -> Self {
+        Error::IOError(err)
+    }
+}
 
 /// Represents an Address Family Idenfitier. Currently only IPv4 and IPv6 are supported.
 #[derive(Debug, Copy, Clone)]
@@ -80,13 +103,7 @@ impl AFI {
         match value {
             1 => Ok(AFI::IPV4),
             2 => Ok(AFI::IPV6),
-            _ => {
-                let msg = format!(
-                    "Number {} does not represent a valid address family.",
-                    value
-                );
-                Err(std::io::Error::new(std::io::ErrorKind::Other, msg))
-            }
+            _ => Err(Error::UnknownAddressFamily(value)),
         }
     }
 }
@@ -485,10 +502,11 @@ where
                 header,
                 Message::RouteRefresh(RouteRefresh::parse(&mut self.stream)?),
             )),
-            _ => Err(Error::new(
-                ErrorKind::Other,
-                "Unknown BGP message type found in BGPHeader",
-            )),
+            _ => {
+                let mut msg = vec![0; header.length as usize];
+                self.stream.read_exact(&mut msg)?;
+                Err(Error::UnknownMessage(header, msg))
+            }
         }
     }
 
