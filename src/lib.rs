@@ -70,6 +70,8 @@ use std::net::IpAddr;
 pub enum Error {
     /// Wrapped std::io::Error
     IOError(io::Error),
+    /// Bad marker
+    BadMarker([u8; 16]),
     /// Unknown AFI
     UnknownAddressFamily(u16),
     /// Unknown message
@@ -119,6 +121,21 @@ pub struct Header {
 
     /// Indicates the type of message that follows the header.
     pub record_type: u8,
+}
+
+impl Header {
+    pub fn parse(stream: &mut dyn Read) -> Result<Header, Error> {
+        let mut marker: [u8; 16] = [0; 16];
+        stream.read_exact(&mut marker)?;
+        if !(marker == [0xff; 16]) {
+            return Err(Error::BadMarker(marker));
+        }
+        Ok(Header {
+            marker,
+            length: stream.read_u16::<BigEndian>()?,
+            record_type: stream.read_u8()?,
+        })
+    }
 }
 
 /// Represents a single BGP message.
@@ -476,16 +493,7 @@ where
     /// This function does not make use of unsafe code.
     ///
     pub fn read(&mut self) -> Result<(Header, Message), Error> {
-        // Parse the header.
-        let mut marker: [u8; 16] = [0; 16];
-        self.stream.read_exact(&mut marker)?;
-
-        let header = Header {
-            marker,
-            length: self.stream.read_u16::<BigEndian>()?,
-            record_type: self.stream.read_u8()?,
-        };
-
+        let header = Header::parse(&mut self.stream)?;
         match header.record_type {
             1 => Ok((header, Message::Open(Open::parse(&mut self.stream)?))),
             2 => {
