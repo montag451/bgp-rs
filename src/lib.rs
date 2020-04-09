@@ -75,7 +75,7 @@ pub enum Error {
     /// Unknown AFI
     UnknownAddressFamily(u16),
     /// Unknown message
-    UnknownMessage(Header, Vec<u8>),
+    UnknownMessage(u8, Vec<u8>),
     /// Unknown path attribute
     UnknownPathAttribute(u8, Vec<u8>),
     /// Unknown origin
@@ -124,6 +124,7 @@ pub struct Header {
 }
 
 impl Header {
+    /// Parse a BGP header
     pub fn parse(stream: &mut dyn Read) -> Result<Header, Error> {
         let mut marker: [u8; 16] = [0; 16];
         stream.read_exact(&mut marker)?;
@@ -155,6 +156,38 @@ pub enum Message {
 
     /// Represent a BGP ROUTE_REFRESH message.
     RouteRefresh(RouteRefresh),
+}
+
+impl Message {
+    /// Parse a BGP message
+    pub fn parse(
+        length: u16,
+        record_type: u8,
+        stream: &mut dyn Read,
+        capabilities: &Capabilities,
+    ) -> Result<Self, Error> {
+        match record_type {
+            1 => Ok(Message::Open(Open::parse(stream)?)),
+            2 => {
+                let attribute = Message::Update(Update::parse(
+                    length,
+                    stream,
+                    capabilities,
+                )?);
+                Ok(attribute)
+            }
+            3 => Ok(Message::Notification),
+            4 => Ok(Message::KeepAlive),
+            5 => Ok(
+                Message::RouteRefresh(RouteRefresh::parse(stream)?),
+            ),
+            _ => {
+                let mut msg = vec![0; length as usize];
+                stream.read_exact(&mut msg)?;
+                Err(Error::UnknownMessage(record_type, msg))
+            }
+        }
+    }
 }
 
 /// Represents a BGP Open message.
@@ -249,11 +282,11 @@ pub struct Update {
 
 impl Update {
     fn parse(
-        header: &Header,
+        length: u16,
         stream: &mut dyn Read,
         capabilities: &Capabilities,
     ) -> Result<Update, Error> {
-        let mut nlri_length: usize = header.length as usize - 23;
+        let mut nlri_length: usize = length as usize - 23;
 
         // ----------------------------
         // Read withdrawn routes.
@@ -494,28 +527,13 @@ where
     ///
     pub fn read(&mut self) -> Result<(Header, Message), Error> {
         let header = Header::parse(&mut self.stream)?;
-        match header.record_type {
-            1 => Ok((header, Message::Open(Open::parse(&mut self.stream)?))),
-            2 => {
-                let attribute = Message::Update(Update::parse(
-                    &header,
-                    &mut self.stream,
-                    &self.capabilities,
-                )?);
-                Ok((header, attribute))
-            }
-            3 => Ok((header, Message::Notification)),
-            4 => Ok((header, Message::KeepAlive)),
-            5 => Ok((
-                header,
-                Message::RouteRefresh(RouteRefresh::parse(&mut self.stream)?),
-            )),
-            _ => {
-                let mut msg = vec![0; header.length as usize];
-                self.stream.read_exact(&mut msg)?;
-                Err(Error::UnknownMessage(header, msg))
-            }
-        }
+        let msg = Message::parse(
+            header.length,
+            header.record_type,
+            &mut self.stream,
+            &self.capabilities,
+        )?;
+        Ok((header, msg))
     }
 
     ///
