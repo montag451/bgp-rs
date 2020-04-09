@@ -57,6 +57,7 @@
 pub mod attributes;
 
 use byteorder::{BigEndian, ReadBytesExt};
+use serde::{Serialize, Deserialize};
 use std::io::{self, Cursor, Read};
 
 pub use crate::attributes::*;
@@ -91,7 +92,7 @@ impl From<io::Error> for Error {
 }
 
 /// Represents an Address Family Idenfitier. Currently only IPv4 and IPv6 are supported.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 #[repr(u16)]
 pub enum AFI {
     /// Internet Protocol version 4 (32 bits)
@@ -140,21 +141,27 @@ impl Header {
 }
 
 /// Represents a single BGP message.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum Message {
     /// Represent a BGP OPEN message.
+    #[serde(rename = "OPEN")]
     Open(Open),
 
     /// Represent a BGP UPDATE message.
+    #[serde(rename = "UPDATE")]
     Update(Update),
 
     /// Represent a BGP NOTIFICATION message.
+    #[serde(rename = "NOTIFICATION")]
     Notification,
 
     /// Represent a BGP KEEPALIVE message.
+    #[serde(rename = "KEEPALIVE")]
     KeepAlive,
 
     /// Represent a BGP ROUTE_REFRESH message.
+    #[serde(rename = "ROUTE-REFRESH")]
     RouteRefresh(RouteRefresh),
 }
 
@@ -191,7 +198,7 @@ impl Message {
 }
 
 /// Represents a BGP Open message.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Open {
     /// Indicates the protocol version number of the message. The current BGP version number is 4.
     version: u8,
@@ -236,7 +243,7 @@ impl Open {
 }
 
 /// Represents a parameter in the optional parameter section of an Open message.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct OpenParameter {
     /// The type of the parameter.
     pub param_type: u8,
@@ -268,7 +275,7 @@ impl OpenParameter {
 }
 
 /// Represents a BGP Update message.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Update {
     /// A collection of routes that have been withdrawn.
     withdrawn_routes: Vec<Prefix>,
@@ -389,8 +396,9 @@ impl Update {
 }
 
 /// Represents NLRIEncodings present in the NRLI section of an UPDATE message.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(non_camel_case_types)]
+#[serde(tag = "type", content = "value")]
 pub enum NLRIEncoding {
     /// Encodings that specify only an IP present, either IPv4 or IPv6
     IP(Prefix),
@@ -403,7 +411,8 @@ pub enum NLRIEncoding {
 }
 
 /// Represents a generic prefix. For example an IPv4 prefix or IPv6 prefix.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(into = "String")]
 pub struct Prefix {
     protocol: AFI,
     length: u8,
@@ -424,6 +433,12 @@ impl From<&Prefix> for IpAddr {
                 IpAddr::from(buffer)
             }
         }
+    }
+}
+
+impl From<Prefix> for String {
+    fn from(prefix: Prefix) -> Self {
+        format!("{}/{}", IpAddr::from(&prefix), prefix.length)
     }
 }
 
@@ -454,11 +469,11 @@ impl Prefix {
 }
 
 /// Represents a BGP Notification message.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Notification {}
 
 /// Represents a BGP Route Refresh message.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RouteRefresh {
     afi: AFI,
     safi: u8,
