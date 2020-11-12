@@ -585,8 +585,37 @@ impl MPReachNLRI {
             }
         } else {
             while cursor.position() < u64::from(size) {
-                let prefix = Prefix::parse(&mut cursor, afi)?;
-                announced_routes.push(NLRIEncoding::IP(prefix));
+                if safi != 4 {
+                    let prefix = Prefix::parse(&mut cursor, afi)?;
+                    announced_routes.push(NLRIEncoding::IP(prefix));
+                } else {
+                    let length = cursor.read_u8()?;
+                    let mut label_stack: Vec<u32> = Vec::with_capacity(4);
+                    let mut label_stack_len = 0;
+                    let mut label = [0; 3];
+                    while label[2] & 1 != 1 {
+                        cursor.read_exact(&mut label)?;
+                        label_stack_len += 24;
+                        label_stack.push(
+                            (label[2] as u32) >> 4 |
+                            (label[1] as u32) << 4 |
+                            (label[0] as u32) << 12
+                        )
+                    }
+                    let prefix_len = length - label_stack_len;
+                    let mut prefix = vec![0; ((prefix_len + 7) / 8) as usize];
+                    cursor.read_exact(&mut prefix)?;
+                    announced_routes.push(
+                        NLRIEncoding::IP_MPLS((
+                            Prefix {
+                                protocol: afi,
+                                length: prefix_len,
+                                prefix: prefix
+                            },
+                            label_stack
+                        ))
+                    );
+                }
             }
         }
 

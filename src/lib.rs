@@ -406,8 +406,8 @@ pub enum NLRIEncoding {
     /// Encodings that specify a Path Identifier as specified in RFC7911. (Prefix, Label)
     IP_WITH_PATH_ID((Prefix, u32)),
 
-    /// Encodings that specify a Path Identifier as specified in RFC8277. (Prefix, MPLS Label)
-    IP_MPLS((Prefix, u32)),
+    /// Encodings that specify a Path Identifier as specified in RFC8277. (Prefix, MPLS Labels)
+    IP_MPLS((Prefix, Vec<u32>)),
 }
 
 /// Represents a generic prefix. For example an IPv4 prefix or IPv6 prefix.
